@@ -1,0 +1,128 @@
+# SETUP INSTRUCTIONS FOR LION HEAD LED SYSTEM
+# Save this file as "README.md" in your TouchDesigner project folder
+
+# LION HEAD LED MAPPING SYSTEM - SETUP GUIDE
+
+## Overview
+
+This system allows you to control 73 Lucenti 1m LED bars arranged in a low-poly lion head shape.
+Each bar has 50 pixels, and the system provides tools for creating generative content,
+3D mapping, and outputting to your LED controller.
+
+## Files Structure
+
+Save these files in your TouchDesigner project folder:
+- `led_bar.py` - Class to represent a single LED bar
+- `led_system.py` - Class to manage the collection of LED bars
+- `td_led_integration.py` - TouchDesigner integration functionality
+- `led_patterns.py` - Basic pattern generators
+- `LionHead_LED_Controller.py` - Main component extension
+
+## TouchDesigner Project Setup
+
+1. Create a new TouchDesigner project
+2. Add all the Python files to your project folder
+3. Follow these steps to set up the components:
+
+### Step 1: Create the Main Controller Component
+
+1. Create a new Base COMP (right-click in network > Base COMP)
+2. Rename it to "LionHeadController"
+3. Right-click the component and select "Edit Component"
+4. Inside the component, create a Text DAT (right-click > DAT > Text)
+5. Rename it to "LionHeadControl"
+6. Copy the contents of `LionHead_LED_Controller.py` into this Text DAT
+7. Right-click on the Text DAT and choose "Run Script"
+
+This will initialize the controller which creates the necessary UI and visualization components.
+
+### Step 2: Configure the 3D Positions
+
+For a real project, you should:
+
+1. Measure the actual 3D positions of your LED bars in the physical installation
+2. Create a JSON file with these positions (format described below)
+3. Load this file using the UI's "Load Configuration" button
+
+For testing, the system will create a simplified lion head shape automatically.
+
+### Step 3: Test the System
+
+1. Use the pattern controls to select different effects
+2. Adjust color, speed, and scale parameters to see real-time changes
+3. When ready, enable the output and configure it for your LED controller
+
+## LED Configuration File Format
+
+The LED configuration file is a JSON file with this structure:
+
+```json
+{
+  "num_bars": 73,
+  "pixels_per_bar": 50,
+  "bars": [
+    {
+      "index": 0,
+      "start": [x1, y1, z1],
+      "end": [x2, y2, z2]
+    },
+    {
+      "index": 1, 
+      "start": [x1, y1, z1],
+      "end": [x2, y2, z2]
+    },
+    ...
+  ]
+}
+```
+
+For each bar, specify:
+- `index`: Bar number (0 to num_bars-1)
+- `start`: 3D coordinates of the start point [x, y, z]
+- `end`: 3D coordinates of the end point [x, y, z]
+
+## Advanced: Creating a Custom 3D Mapping from a Model
+
+For a more accurate mapping to your lion head, you can:
+
+1. Create or obtain a 3D model of your lion head (.obj, .fbx, etc.)
+2. Import it into TouchDesigner
+3. Use the model as a reference to position your LED bars
+4. Save the configuration for use in the main system
+
+The following code can help with importing a model (run in a Python DAT):
+
+```python
+# Get reference to our controller
+controller = op('LionHeadController').ext.LedControllerExt
+
+# Load a 3D model of the lion head
+model_geo = controller.load_lion_head_model('path/to/your/model.obj')
+
+# Create a tool for mapping LEDs to the model
+mapping_tool = controller.create_3d_mapping_tool()
+```
+
+## Extending the System
+
+To add custom effects:
+
+1. Extend the `PatternGenerator` class with your own effects
+2. Add the new patterns to the UI menu in `_setup_parameters()`
+3. Add handling for the new patterns in `_apply_current_pattern()`
+
+## Coming Up Next
+
+This is the first part of the implementation. Future parts will include:
+
+1. GLSL shaders for advanced effects
+2. Audio reactivity
+3. 3D matrix representation
+4. Complete 3D mapping tool
+5. Custom TouchDesigner nodes for easier use
+
+## Troubleshooting
+
+- If you encounter errors about missing modules, ensure all Python files are in the project folder
+- If the visualization doesn't appear, check the SOP path in the Geo COMP
+- For output issues, verify your network settings and LED controller compatibility

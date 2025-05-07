@@ -1,0 +1,235 @@
+# Lion Head LED System: Setup Guide
+
+## Overview
+
+This guide will walk you through setting up the 3D LED control system for your lion head sculpture with 73 Lucenti 1m LED bars. We'll take a progressive approach, starting with the basic implementation and adding more advanced features as we go.
+
+## System Requirements
+
+- TouchDesigner 2022 or newer
+- Computer with decent graphics card
+- Python 3.7+ (included with TouchDesigner)
+- ArtNet or sACN compatible LED controller
+
+## Step 1: Project Setup
+
+1. Create a new TouchDesigner project
+2. Save it to a dedicated folder (e.g., "LionHeadLEDs")
+3. Add these files to your project folder:
+   - `led_bar.py` (LED bar class)
+   - `led_system.py` (LED system class)
+   - `td_led_integration.py` (TouchDesigner integration)
+   - `led_patterns.py` (Basic pattern generators)
+   - `led_shader_integration.py` (GLSL shader integration)
+   - `led_matrix_3d.py` (3D matrix abstraction)
+   - `led_effects.glsl` (GLSL shader for effects)
+   - `LionHead_LED_Controller.py` (Main component script)
+
+## Step 2: Create the Base Component
+
+1. In TouchDesigner, right-click in the network editor and select `Base COMP`
+2. Rename it to "LionHeadLEDController"
+3. Right-click on the component and select "Edit Component"
+4. Inside the component, create a Text DAT (right-click > DAT > Text)
+5. Name it "LionHeadControl"
+6. Paste the contents of `LionHead_LED_Controller.py` into this DAT
+7. Right-click the Text DAT and select "Run Script"
+
+This will initialize the basic controller and create the UI.
+
+## Step 3: Import Module Dependencies
+
+If you haven't installed the required Python modules yet:
+
+1. Go to Palette > Tools > Package Manager
+2. Search for "scipy" and install it
+3. Search for "noise" and install it (optional, for better noise patterns)
+
+## Step 4: Configure LED Positions
+
+For testing, you can use the built-in test configuration:
+
+```python
+# In a Python DAT or the textport
+controller = op('LionHeadLEDController').ext.LedControllerExt
+controller.led_system.create_test_configuration()
+controller._setup_visualization()
+```
+
+For your actual lion head installation, you'll need to create a JSON file with the 3D positions of your LED bars:
+
+```json
+{
+  "num_bars": 73,
+  "pixels_per_bar": 50,
+  "bars": [
+    {
+      "index": 0,
+      "start": [x1, y1, z1],
+      "end": [x2, y2, z2]
+    },
+    {
+      "index": 1,
+      "start": [x3, y3, z3],
+      "end": [x4, y4, z4]
+    },
+    ...
+  ]
+}
+```
+
+Save this file as `led_positions.json` in your project folder, then load it:
+
+```python
+controller = op('LionHeadLEDController').ext.LedControllerExt
+controller.td_integration.import_led_positions('led_positions.json')
+```
+
+## Step 5: Basic Testing
+
+1. The UI should now be visible with controls for basic patterns
+2. Try different patterns: Solid, Rainbow, Gradient, Wave, Pulse, Chase
+3. Adjust colors, speed, and scale parameters
+4. Verify that the visualization updates correctly
+
+## Step 6: Add GLSL Shader Support
+
+Now let's add the GLSL shader support for more advanced effects:
+
+1. Create a Text DAT named "ShaderExtension"
+2. Paste the following code:
+
+```python
+# Add shader support to the controller
+from led_shader_integration import add_shader_support
+
+controller = op('LionHeadLEDController').ext.LedControllerExt
+add_shader_support(controller)
+```
+
+3. Run the script
+
+You should now have additional shader-based patterns available in the pattern menu.
+
+## Step 7: Add 3D Matrix Support
+
+The 3D matrix provides a powerful abstraction for generating content:
+
+1. Create a Text DAT named "MatrixExtension"
+2. Paste the following code:
+
+```python
+# Add 3D matrix support to the controller
+from led_matrix_3d import add_matrix_support
+
+controller = op('LionHeadLEDController').ext.LedControllerExt
+add_matrix_support(controller)
+```
+
+3. Run the script
+
+This adds several 3D patterns to the menu: 3D Noise, 3D Wave, 3D Pulse, Moving Plane, Voxel Pulse, Rain, 3D Rainbow, and 3D Fire.
+
+## Step 8: Configure Output
+
+To send the data to your actual LED controller:
+
+1. In the UI controls, go to the "Output" tab
+2. Select your output protocol (ArtNet, sACN, DMX)
+3. Enter the appropriate IP address or interface
+4. Set the correct universe number
+5. Enable the output by clicking "Enable Output"
+
+## Step 9: Creating Custom Patterns
+
+### Adding a Basic Pattern
+
+1. Edit the `led_patterns.py` file
+2. Add your pattern method to the `PatternGenerator` class
+3. Update the `_apply_current_pattern` method in `LionHead_LED_Controller.py`
+4. Add the pattern name to the UI menu
+
+### Adding a GLSL Pattern
+
+1. Edit the `led_effects.glsl` file
+2. Add your pattern function
+3. Add a case to the `main()` function's switch statement
+4. Update the pattern type handling in `led_shader_integration.py`
+
+### Adding a 3D Matrix Pattern
+
+1. Edit the `led_matrix_3d.py` file
+2. Add your pattern method to the `LEDMatrix3D` class
+3. Update the `apply_pattern` method in the `MatrixIntegration` class
+4. Add the pattern name to the pattern map in `add_matrix_support`
+
+## Step 10: Visualizing the Voxel Grid (Optional)
+
+If you want to visualize the 3D matrix voxel grid:
+
+```python
+controller = op('LionHeadLEDController').ext.LedControllerExt
+matrix_integration = controller.matrix_integration
+voxel_geo = matrix_integration.visualize_voxel_grid()
+```
+
+## Advanced Features
+
+### Importing a 3D Lion Head Model
+
+If you have a 3D model of your lion head, you can import it for reference:
+
+```python
+controller = op('LionHeadLEDController').ext.LedControllerExt
+model_geo = controller.load_lion_head_model('path/to/your/model.obj')
+```
+
+### Adding Audio Reactivity
+
+The system includes basic audio reactivity. To enable it:
+
+1. Make sure an audio source is connected to your computer
+2. Try the "ShaderAudio" pattern which uses audio input
+3. Adjust the audio sensitivity in the UI
+
+### Creating Complex Shows
+
+For complex shows with multiple effects:
+
+1. Create a Text DAT named "ShowSequencer"
+2. Define a sequence of patterns, durations, and transitions
+3. Use a timer to trigger pattern changes
+4. You can store and save show presets using the `exportStateToFile` method
+
+## Troubleshooting
+
+### No Visualization
+
+- Check that the LED system has bars added
+- Verify the visualization SOP exists and is displayed
+- Check for Python errors in the textport
+
+### Pattern Not Updating
+
+- Make sure the timer is running
+- Check that pattern parameters are valid
+- Verify that the pattern is properly registered
+
+### Output Not Working
+
+- Check network settings for ArtNet/sACN
+- Verify universe and channel mapping
+- Test with a simpler output pattern
+- Check your LED controller configuration
+
+## Next Steps
+
+This system provides a solid foundation for controlling your lion head LED installation. As you become more familiar with it, consider these enhancements:
+
+1. Create a timeline-based sequencer for shows
+2. Add OSC or MIDI control for live performance
+3. Develop custom patterns specific to the lion head shape
+4. Integrate with sensors for interactive installations
+5. Create a custom UI with more intuitive controls
+
+Feel free to modify and extend the system to suit your specific needs!
