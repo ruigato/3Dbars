@@ -246,7 +246,7 @@ def update_results():
     # Update existing tables instead of creating new ones
     
     # Update points_processed table with distances
-    points_out = op('points_processedT')
+    points_out = op('points_processed')
     if points_out:
         # Clear the table but preserve the header row
         header = []

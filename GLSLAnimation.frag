@@ -14,7 +14,7 @@ uniform float u_glitter_speed;   // Speed of glitter animation
 uniform float u_blink_speed;   // Speed of random bar blinking
 uniform float u_blink_density; // Percentage of bars that are on at any time (0.0-1.0)
 uniform int u_total_bars;     // Total number of bars (default: 69)
-
+uniform int u_highlight_bar_id;  // Bar ID to highlight (0-68)
 // Green color value (will be replaced with exact RGB later)
 const vec3 GREEN_COLOR = vec3(0.0, 1.0, 0.0);
 const vec3 WHITE_COLOR = vec3(1.0, 1.0, 1.0);
@@ -278,6 +278,29 @@ vec3 animateRandomBars(vec2 uv, vec4 pos) {
     return mix(GREEN_COLOR, WHITE_COLOR, intensity);
 }
 
+// Single bar highlight pattern - highlights specified bar with pulsating white
+vec3 animateSingleBar(vec2 uv, vec4 pos) {
+    int bar_id = int(pos.z);  // Integer bar ID from B channel
+    
+    // Base color for non-highlighted bars (dim green)
+    vec3 baseColor = GREEN_COLOR * 0.2;
+    
+    // Check if this is the highlighted bar
+    if (bar_id == u_highlight_bar_id) {
+        // Calculate pulsating effect using wave_speed
+        float pulse = 0.5 + 0.5 * sin(u_time * 0.1 * u_wave_speed);
+        
+        // Increase intensity for smoother transition to white
+        float intensity = pulse * pulse;
+        
+        // This is the highlighted bar - make it pulse white
+        return mix(GREEN_COLOR, WHITE_COLOR, intensity);
+    } else {
+        // Other bars - dim green
+        return baseColor;
+    }
+}
+
 // Sample texture using different mapping methods
 vec3 sampleTexture(vec4 pos) {
     // Extract position data
@@ -372,6 +395,9 @@ void main() {
         procColor = animateBarPattern(vUV.st, posData);
     } else if (u_pattern == 6) {
         procColor = animateRandomBars(vUV.st, posData);
+} else if (u_pattern == 7) {
+    procColor = animateSingleBar(vUV.st, posData);
+
     } else {
         procColor = animateWave(vUV.st, posData);
     }

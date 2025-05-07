@@ -20,6 +20,8 @@ class LEDBarRemapper:
         self.initialize_tables()
         # Mapeamento de trocas e inversões
         self.bar_mapping      = {}
+        # Initialize the mapping table for visualization
+        self.update_mapping_table()
         self.log_message("LED Bar Remapper extension initialized")
 
     def ensure_output_tables(self):
@@ -34,6 +36,9 @@ class LEDBarRemapper:
         # vertices_out
         name = self.ownerComp.par.Verticesout.eval()
         self.vertices_out = op(name) or parent.create(tableDAT, name)
+        # mapping table for shader visualization
+        name = "BarMappingTable"
+        self.mapping_table = op(name) or parent.create(tableDAT, name)
 
     def initialize_tables(self):
         """Copia os dados das tabelas de input para as de output."""
@@ -45,10 +50,45 @@ class LEDBarRemapper:
             self.vertices_out.copy(self.vertices_table)
         self.log_message("Output tables initialized")
 
+    def update_mapping_table(self):
+        """Update the mapping table for shader visualization"""
+        # Find the table operator
+        if not self.mapping_table:
+            self.log_message("Error: BarMappingTable not found")
+            return False
+        
+        # Clear the table
+        self.mapping_table.clear()
+        
+        # Add header row
+        self.mapping_table.appendRow(['orig_id', 'remapped_id', 'is_inverted'])
+        
+        # Fill table with all bar IDs (0 to total_bars-1)
+        total_bars = int(self.ownerComp.par.Totalbars.eval())
+        
+        for i in range(total_bars):
+            # Get remapped ID (use original if not mapped)
+            if i in self.bar_mapping and isinstance(self.bar_mapping[i], int):
+                remapped_id = self.bar_mapping[i]
+            else:
+                remapped_id = i
+            
+            # Check if inverted
+            inversion_key = f"inverted_{i}"
+            is_inverted = 1 if inversion_key in self.bar_mapping else 0
+            
+            # Add row
+            self.mapping_table.appendRow([i, remapped_id, is_inverted])
+        
+        self.log_message(f"Updated mapping table with {total_bars} bars")
+        return True
+
     def reset_tables(self):
         """Reverte as tabelas de output aos valores originais."""
         self.initialize_tables()
         self.bar_mapping = {}
+        # Update mapping table after resetting
+        self.update_mapping_table()
         self.log_message("Output tables reset to original input values")
         return True
 
@@ -95,6 +135,9 @@ class LEDBarRemapper:
         self.swap_vertices_rows(v1, v2)
         # 3) points
         self.swap_points_rows(v1, v2)
+        
+        # Update mapping table after change
+        self.update_mapping_table()
 
         self.log_message("Swap completo")
         return True
@@ -206,6 +249,9 @@ class LEDBarRemapper:
         else:
             self.bar_mapping[key] = True
             self.log_message(f"Bar {bar_index} marcada como invertida")
+            
+        # Update mapping table after inversion
+        self.update_mapping_table()
 
         self.log_message(f"Inversão completa para barra {bar_index}")
         return True
@@ -274,6 +320,9 @@ class LEDBarRemapper:
 
     def apply_remapping(self):
         """Imprime um resumo das trocas e inversões efetuadas."""
+        # Update mapping table to ensure it's current
+        self.update_mapping_table()
+        
         self.log_message("Remapping complete. Summary of changes:")
         # Trocas
         swaps = {k: v for k, v in self.bar_mapping.items()
