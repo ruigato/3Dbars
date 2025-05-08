@@ -38,6 +38,8 @@ uniform int u_from_pattern;           // Pattern transitioning from
 uniform int u_to_pattern;             // Pattern transitioning to
 uniform float u_transition_duration;  // Duration in seconds (for timing effects)
 
+uniform float u_DEBUG; // Debugging variable (0=off, 1=on)
+
 // Define the group IDs for each facial feature
 const int EYES_GROUP = 2;        // Group for eyes
 const int EYEBROWS_GROUP = 4;    // Group for eyebrows/brows
