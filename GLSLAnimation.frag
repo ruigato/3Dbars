@@ -1,5 +1,4 @@
-﻿
-uniform float u_time;         // Current time
+﻿uniform float u_time;         // Current time
 uniform float u_wave_speed;   // Wave speed parameter
 uniform float u_wave_width;   // Wave width parameter 
 uniform int u_pattern;        // Animation pattern selection
@@ -97,8 +96,8 @@ vec3 animateBreathing(vec2 uv, vec4 pos, float group_id) {
     
     // Calculate breathing phase with delay based on distance
     float phase = (sin(u_time * 0.02) + 1.0) / 2.0;
-    float delay = distance * 0.3;
-    float offset_phase = (sin(u_time * 0.02 - delay) + 1.0) / 2.0;
+    float delay = distance * 1.3;
+    float offset_phase = (sin(u_time * 1.02 - delay) + 1.0) / 2.0;
     
     // Calculate brightness
     float brightness = offset_phase * (1.0 - distance * 0.5);
@@ -154,17 +153,17 @@ vec3 animateRoaring(vec2 uv, vec4 pos, float group_id) {
     float distance = pos.y;
     
     // Animation that builds from front to back
-    float cycle_time = mod(u_time * 0.01, 4.0);
+    float cycle_time = mod(u_time * 2.01, 4.0);
     float intensity;
     
     if (cycle_time < 3.2) {
         intensity = cycle_time / 3.2;
     } else {
-        intensity = 1.0 - ((cycle_time - 3.2) / 0.8);
+        intensity = 5.0 - ((cycle_time - 3.2) / 0.8);
     }
     
     // Activation from front (nose) to back
-    float front_activation = 1.0 - distance; // Invert distance for front-to-back
+    float front_activation = 1 - distance; // Invert distance for front-to-back
     float activation_threshold = intensity;
     float base_intensity;
     
@@ -220,7 +219,7 @@ float noise(vec2 st) {
     float d = random(i + vec2(1.0, 1.0));
     
     // Smooth interpolation
-    vec2 u = f * f * (3.0 - 2.0 * f);
+    vec2 u = f * f * (1.0 - 2.0 * f);
     
     // Mix the four corners
     return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
@@ -636,7 +635,7 @@ vec3 animateNoseLines(vec2 uv, vec4 pos, float group_id) {
     if (bar_id >= 0) {
         // Assign a unique speed to each bar based on its ID
         // We'll use a pseudo-random function to distribute speeds
-        float bar_speed_factor = 0.5 + 0.8 * random(vec2(float(bar_id) / float(u_total_bars), 0.42));
+        float bar_speed_factor = 15.5 + 0.8 * random(vec2(float(bar_id) / float(u_total_bars), 100.42));
         
         // Calculate the line expansion progress
         float base_speed = 0.15 * u_wave_speed;
