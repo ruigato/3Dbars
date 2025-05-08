@@ -9,6 +9,8 @@ uniform int u_use_direct_color; // 0=map to green/white, 1=use direct texture co
 uniform float u_zone_speed;   // Speed of zone transitions in group sequence
 uniform float u_glitter_density; // Density of glitter particles (0.01-0.2)
 uniform float u_glitter_speed;   // Speed of glitter animation
+uniform float u_glitter_scale;   // Speed of glitter animation
+uniform float u_bar_width;   // Width of each bar pulse animation (0.0-1.0)
 uniform float u_blink_speed;   // Speed of random bar blinking
 uniform float u_blink_density; // Percentage of bars that are on at any time (0.0-1.0)
 uniform int u_total_bars;     // Total number of bars (default: 69)
@@ -234,7 +236,7 @@ vec3 animateGlitter(vec2 uv, vec4 pos, float group_id) {
     vec3 baseColor = u_base_color * 0.2;
     
     // Create a grid of potential glitter points
-    float scale = 50.0;  // Adjust for more/fewer glitter points
+    float scale = u_glitter_scale;  // Adjust for more/fewer glitter points
     vec2 scaledPos = vec2(angle * scale, distance * scale * 2.0);
     
     // Add time dimension for animation
@@ -284,13 +286,13 @@ vec3 animateBarPattern(vec2 uv, vec4 pos, float group_id) {
     float dist = abs(bar_pos - mod(wave_pos, 1.0));
     
     // If wave_pos > 1, the wave is traveling back
-    if (wave_pos > 1.0) {
+    if (wave_pos > 0.99) {
         dist = abs(bar_pos - (2.0 - wave_pos));
     }
     
     // Create pulse effect
     float intensity = 0.1;  // Base intensity
-    float pulse_width = 0.3;
+    float pulse_width = u_bar_width;
     
     if (dist < pulse_width) {
         // Inside pulse
@@ -352,10 +354,23 @@ vec3 animateSingleBar(vec2 uv, vec4 pos, float group_id) {
     // Check if this is the highlighted bar
     if (bar_id == u_highlight_bar_id) {
         // Calculate pulsating effect using wave_speed
-        float pulse = 0.5 + 0.5 * sin(u_time * 0.1 * u_wave_speed);
-        
+        float pulse = 0.5 + 0.5 * sin(u_time * 0.1 * u_wave_speed * 10);
+
+    int bar_id = int(pos.z);  // Integer bar ID from B channel
+    float bar_pos = pos.w;    // Position along bar (0-1) in A channel
+    
+    // Create a wave traveling along each bar
+    float t = u_time * 0.2 * u_wave_speed;
+    float wave_pos = mod(t, 2.0);  // Position of wave, cycles 0-2
+    
+    // Distance from current position to wave front
+    float dist = abs(bar_pos - mod(wave_pos, 1.0));
+    
+    // If wave_pos > 1, the wave is traveling back
+ 
+
         // Increase intensity for smoother transition to highlight color
-        float intensity = pulse * pulse;
+        float intensity = pulse * dist;
         
         // This is the highlighted bar - make it pulse
         return mix(u_base_color, u_highlight_color, intensity);
@@ -376,12 +391,12 @@ vec3 animateSymmetricalPulse(vec2 uv, vec4 pos, float group_id) {
     float symmetry_angle = mod(angle + 0.5, 1.0);
     
     // Calculate base pulse timing
-    float pulse_rate = 0.05 * u_wave_speed;
+    float pulse_rate = 1.05 * u_wave_speed;
     float t = u_time * pulse_rate;
     
     // Create multiple pulse zones based on angle
     // This divides the model into angular zones (number of zones can be adjusted)
-    const float NUM_ZONES = 4.0;
+    const float NUM_ZONES = 7.0;
     float zone_size = 1.0 / NUM_ZONES;
     float zone_index = floor(angle * NUM_ZONES);
     
@@ -450,7 +465,7 @@ vec3 animateVerticalCascade(vec2 uv, vec4 pos, float group_id) {
     float dist_from_cascade = vertical_pos - cascade_position;
     
     // Calculate intensity based on distance to cascade
-    float cascade_width = 0.3;  // Width of the cascade effect
+    float cascade_width = 0.1;  // Width of the cascade effect
     float intensity = 0.1;      // Base intensity
     
     if (dist_from_cascade > 0.0 && dist_from_cascade < cascade_width) {
@@ -469,7 +484,7 @@ vec3 animateVerticalCascade(vec2 uv, vec4 pos, float group_id) {
     // Add some trailing glow after the main cascade passed
     if (dist_from_cascade < 0.0 && dist_from_cascade > -0.5) {
         float trail_intensity = abs(dist_from_cascade) / 0.5;  // Fade out over 0.5 units
-        float glow = 0.4 * (1.0 - trail_intensity);
+        float glow = 0.8 * (1.0 - trail_intensity);
         intensity = max(intensity, glow);
     }
     
@@ -498,7 +513,7 @@ vec3 animateSymmetricalChase(vec2 uv, vec4 pos, float group_id) {
     float min_dist = min(dist1, dist2);
     
     // Width of the chase effect
-    float chase_width = 0.15;
+    float chase_width = 0.05;
     
     // Base intensity
     float intensity = 0.15;  // Dim base glow
@@ -547,7 +562,7 @@ vec3 animateSymmetricalChase(vec2 uv, vec4 pos, float group_id) {
         
         // Add a burst effect proportional to meeting progress
         float burst = meeting_progress * (1.0 - distance * 0.5);  // Stronger near nose
-        intensity += burst * 0.7;  // Add to existing intensity
+        intensity += burst * 0.3;  // Add to existing intensity
     }
     
     // Apply distance-based falloff to create depth
@@ -570,7 +585,7 @@ vec3 animateAxisRipple(vec2 uv, vec4 pos, float group_id) {
     float ripple_time = u_time * ripple_speed;
     
     // Multiple ripple centers, starting at different times
-    const int NUM_RIPPLES = 5;
+    const int NUM_RIPPLES = 7;
     float intensity = 0.05;  // Base intensity
     
     for (int i = 0; i < NUM_RIPPLES; i++) {
@@ -579,7 +594,7 @@ vec3 animateAxisRipple(vec2 uv, vec4 pos, float group_id) {
         float ripple_phase = mod(ripple_time + ripple_offset, 1.0);
         
         // Ripple grows from center to edge
-        float ripple_size = ripple_phase * 1.2;  // Max size slightly larger than 1.0
+        float ripple_size = ripple_phase * 1.5;  // Max size slightly larger than 1.0
         
         // Calculate the axes stretching effect
         // This creates an oval shape by modifying the distance based on angle
@@ -635,7 +650,7 @@ vec3 animateNoseLines(vec2 uv, vec4 pos, float group_id) {
     if (bar_id >= 0) {
         // Assign a unique speed to each bar based on its ID
         // We'll use a pseudo-random function to distribute speeds
-        float bar_speed_factor = 15.5 + 0.8 * random(vec2(float(bar_id) / float(u_total_bars), 100.42));
+        float bar_speed_factor = 1.5 + 0.8 * random(vec2(float(bar_id) / float(u_total_bars), 100.42));
         
         // Calculate the line expansion progress
         float base_speed = 0.15 * u_wave_speed;
@@ -701,7 +716,7 @@ vec3 animateGroupHighlight(vec2 uv, vec4 pos, float group_id) {
     vec3 baseColor = u_base_color * 0.2;
     
     // Calculate which group to highlight based on time (adjusted for 1-based indexing)
-    float group_cycle_time = 5.0; // seconds to cycle through all groups
+    float group_cycle_time = 2.0; // seconds to cycle through all groups
     float cycle_speed = 1.0 / (group_cycle_time * float(u_num_groups));
     int active_group = int(mod(floor(u_time * cycle_speed * u_zone_speed), float(u_num_groups))) + 1;
     
@@ -741,24 +756,20 @@ vec3 debugGroupVisualization(vec2 uv, vec4 pos, float group_id) {
     // First, use fixed colors for the first 10 bars to easily identify them
     if (bar_id >= 0 && bar_id < 10) {
         // Bright, distinct colors for easy identification
-        if (bar_id == 0) color = vec3(1.0, 0.0, 0.0); // Red
+        if (bar_id == 0) color = vec3(0.0, 1.0, 0.0); // Red
         else if (bar_id == 1) color = vec3(0.0, 1.0, 0.0); // Green
-        else if (bar_id == 2) color = vec3(0.0, 0.0, 1.0); // Blue
-        else if (bar_id == 3) color = vec3(1.0, 1.0, 0.0); // Yellow
-        else if (bar_id == 4) color = vec3(1.0, 0.0, 1.0); // Magenta
-        else if (bar_id == 5) color = vec3(0.0, 1.0, 1.0); // Cyan
-        else if (bar_id == 6) color = vec3(1.0, 0.5, 0.0); // Orange
-        else if (bar_id == 7) color = vec3(0.5, 0.0, 1.0); // Purple
-        else if (bar_id == 8) color = vec3(0.5, 1.0, 0.5); // Lime
-        else if (bar_id == 9) color = vec3(1.0, 0.5, 0.5); // Pink
+        else if (bar_id == 2) color = vec3(0.0, 1.0, 0.0); // Blue
+        else if (bar_id == 3) color = vec3(0.0, 1.0, 0.0); // Yellow
+        else if (bar_id == 4) color = vec3(0.0, 1.0, 0.0); // Magenta
+        else if (bar_id == 5) color = vec3(0.0, 1.0, 0.0); // Cyan
+        else if (bar_id == 6) color = vec3(0.0, 1.0, 0.0); // Orange
+        else if (bar_id == 7) color = vec3(0.0, 1.0, 0.0); // Purple
+        else if (bar_id == 8) color = vec3(0.0, 1.0, 0.0);// Lime
+        else if (bar_id == 9) color = vec3(0.0, 1.0, 0.0); // Pink
     } else {
         // For other bars, create colors based on bar ID
         float normalized_bar_id = float(bar_id) / float(u_total_bars);
-        color = vec3(
-            fract(normalized_bar_id * 3.07),
-            fract(normalized_bar_id * 5.13),
-            fract(normalized_bar_id * 7.19)
-        );
+        color = vec3(0.0, 1.0, 0.0);
     }
     
     // Now add variation along the bar to see bar position
@@ -844,7 +855,7 @@ vec3 animateAnatomicalExpression(vec2 uv, vec4 pos, float group_id) {
     vec3 baseColor = u_base_color * 0.15;
     
     // Animation cycle time in seconds (how long the full expression takes)
-    float cycle_duration = 20.0;
+    float cycle_duration = 3.0;
     float t = mod(u_time, cycle_duration) / cycle_duration;
     
     // Define timing for each facial feature activation (when each starts & ends)
@@ -879,8 +890,8 @@ vec3 animateAnatomicalExpression(vec2 uv, vec4 pos, float group_id) {
     float eyes_intensity = 0.0;
     float brows_intensity = 0.0;
     float nose_intensity = 0.0;
-    float teeth_intensity = 0.0;
-    float mane_intensity = 0.0;
+    float teeth_intensity = 0.2;
+    float mane_intensity = 0.2;
     float ears_intensity = 0.0;
     float cheeks_intensity = 0.0;
     
@@ -1147,10 +1158,10 @@ vec3 animateEyes(vec2 uv, vec4 pos, float group_id) {
     // Different eye animation modes
     if (u_eyes_mode == 0) {
         // Steady glow
-        intensity = 0.7 * eye_proximity;
+        intensity = 1.7 * eye_proximity;
         
         // Add subtle breathing effect
-        float breath = 0.2 * sin(u_time * 0.5);
+        float breath = 1.1 * sin(u_time * 5.5);
         intensity += breath * eye_proximity;
         
         // Add subtle background glow for wider eye region
@@ -1220,12 +1231,12 @@ vec3 animateEyes(vec2 uv, vec4 pos, float group_id) {
         
         // Apply blink (reduces intensity when blinking)
         // When fully closed (blink_amount = 1.0), the eyes should be very dark
-        float open_intensity = eye_proximity * 0.8;
+        float open_intensity = eye_proximity * 2;
         float closed_intensity = eye_proximity * 0.05; // Nearly black when closed
         intensity = mix(open_intensity, closed_intensity, blink_amount);
         
         // Add subtle breathing effect when eyes are open
-        float breath = 0.1 * sin(u_time * 0.7);
+        float breath = 1.1 * sin(u_time * 0.7);
         intensity += breath * eye_proximity * (1.0 - blink_amount);
         
         // Add wider glow around eyes (dimmer when blinking)
@@ -1235,7 +1246,7 @@ vec3 animateEyes(vec2 uv, vec4 pos, float group_id) {
     else if (u_eyes_mode == 2) {
         // Looking around effect - shift the bright spot
         float look_cycle = 8.0; // seconds to complete a look cycle
-        float look_phase = mod(u_time, look_cycle) / look_cycle;
+        float look_phase = mod(u_time*2, look_cycle) / look_cycle;
         
         // Calculate look direction offset
         // At phase 0.25: looking right
@@ -1252,33 +1263,18 @@ vec3 animateEyes(vec2 uv, vec4 pos, float group_id) {
         float adjusted_proximity = 1.0 - smoothstep(0.0, 0.15, adjusted_eye_dist);
         
         // Apply the adjusted intensity
-        intensity = 0.8 * adjusted_proximity;
+        intensity = 2 * adjusted_proximity;
     }
     else if (u_eyes_mode == 3) {
         // Alert/wide eyes mode with pupil dilation
         // Simulate dilated pupils with brighter centers
-        
+        float flash = mod( u_time * 30, 2)/2;
         // Make the bright spot smaller but more intense (dilated pupil)
-        float pupil_size = 0.1; // Slightly larger pupil (was 0.08)
-        float pupil_dist = abs(angle - eye_center);
-        float pupil_proximity = 1.0 - smoothstep(0.0, pupil_size, pupil_dist);
+
         
-        // Create wider eye glow for alert look
-        float eye_glow_size = 0.25; // Wider glow area (previous value was eye_proximity)
-        float eye_glow_dist = abs(angle - eye_center);
-        float eye_glow = 1.0 - smoothstep(0.0, eye_glow_size, eye_glow_dist);
+        intensity = flash;
         
-        // Add pulsing to simulate alertness
-        float alert_pulse = 0.5 + 0.5 * sin(u_time * 3.0); // Faster pulsing
-        
-        // Combine for final intensity - bright pupil with moderate surround
-        float pupil_intensity = 0.9 * pupil_proximity;
-        float surround_intensity = 0.6 * eye_glow; // Increased from 0.5 to 0.6
-        
-        intensity = max(pupil_intensity, surround_intensity);
-        
-        // Add the alert pulse effect with wider spread
-        intensity += 0.15 * alert_pulse * eye_glow; // Increased from 0.1 to 0.15
+
     }
     else if (u_eyes_mode == 4) {
         // Progressive pixel animation along each bar
@@ -1344,7 +1340,7 @@ vec3 animateEyes(vec2 uv, vec4 pos, float group_id) {
         
         // Add wider glow around eyes
         float glow_intensity = 0.2 * eye_proximity;
-        intensity = max(intensity, glow_intensity);
+        intensity = max(intensity, glow_intensity)*5;
     }
     
     // Apply user-defined intensity multiplier
@@ -1379,19 +1375,19 @@ vec3 animateTeeth(vec2 uv, vec4 pos, float group_id) {
     // Different teeth animation modes
     if (u_teeth_mode == 0) {
         // Steady glow for teeth
-        intensity = 0.7;
+        intensity = .7;
         
         // Add subtle breathing variation
-        float breath = 0.15 * sin(u_time * 0.6);
+        float breath = .75 * sin(u_time * 0.6);
         intensity += breath;
     }
     else if (u_teeth_mode == 1) {
         // Chattering/pulsing teeth
         float chatter_speed = 8.0; // Adjust for faster/slower chattering
-        float chatter_phase = sin(u_time * chatter_speed) * 0.5 + 0.5;
+        float chatter_phase = sin(u_time * chatter_speed) * 1.5 + 0.5;
         
         // Create a pulsing effect with some randomization
-        float random_offset = random(vec2(bar_id, 0.42)) * 0.2; // Per-bar variation
+        float random_offset = random(vec2(bar_id, 0.42)) *0.8; // Per-bar variation
         float chatter_effect = chatter_phase + random_offset;
         
         // Apply chattering effect
@@ -1418,7 +1414,7 @@ vec3 animateTeeth(vec2 uv, vec4 pos, float group_id) {
         
         // Calculate snarl effect - teeth light up as the wave passes over them
         float snarl_threshold = triangle_wave; // Position of the snarl wave (0-1)
-        float snarl_width = 0.3; // Width of the active snarl region
+        float snarl_width = 0.1; // Width of the active snarl region
         
         // Calculate proximity to the snarl wave
         float dist_from_snarl = abs(snarl_pos - snarl_threshold);
@@ -1432,14 +1428,15 @@ vec3 animateTeeth(vec2 uv, vec4 pos, float group_id) {
         // Create a strong pulsing effect with some variation across teeth
         
         // Base roar intensity - strong
-        float roar_base = 0.8;
+        float roar_base = 0.1 + 0.9 * distance; // Distance-based intensity
+        // Roar intensity is stronger at the center and weaker at the edges
         
         // Add pulsing to simulate roaring
         float roar_pulse_rate = 5.0; // Adjust for different roar speeds
         float roar_pulse = 0.2 * sin(u_time * roar_pulse_rate);
         
         // Add some variation based on position
-        float variation = 0.1 * sin(bar_pos * 20.0 + u_time * 3.0);
+        float variation = 0.1 * sin(bar_pos * 50.0 + u_time * 3.0);
         
         // Combine for final roar effect
         intensity = roar_base + roar_pulse + variation;
