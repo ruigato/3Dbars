@@ -1,5 +1,4 @@
-﻿// LED Lion Animation Shader - Updated with Group Texture Input and New Patterns
-
+﻿
 uniform float u_time;         // Current time
 uniform float u_wave_speed;   // Wave speed parameter
 uniform float u_wave_width;   // Wave width parameter 
@@ -19,6 +18,33 @@ uniform int u_num_groups;     // Number of groups (default: 7)
 uniform vec3 u_base_color;    // Base color (default green)
 uniform vec3 u_highlight_color; // Highlight color (default white)
 uniform int u_active_group;   // Group to highlight (manual override for group sequence)
+
+// Independent facial feature controls
+uniform int u_eyes_override;      // 0=off (use base pattern), 1=on (apply eyes effect)
+uniform float u_eyes_intensity;   // 0.0-1.0 brightness multiplier for eyes
+uniform int u_eyes_mode;          // 0=steady, 1=blink, 2=look around, 3=alert/wide, 4=per-bar blink
+uniform vec3 u_eyes_color;        // Independent color for eyes highlight
+
+uniform int u_teeth_override;     // 0=off (use base pattern), 1=on (apply teeth effect)
+uniform float u_teeth_intensity;  // 0.0-1.0 brightness multiplier for teeth
+uniform int u_teeth_mode;         // 0=steady, 1=chattering, 2=snarl, 3=roar
+uniform vec3 u_teeth_color;       // Independent color for teeth highlight
+
+// NEW: Transition control uniforms
+uniform int u_enable_transition;      // 0=disabled, 1=enabled
+uniform float u_transition_progress;  // 0.0 (from) to 1.0 (to)
+uniform int u_from_pattern;           // Pattern transitioning from
+uniform int u_to_pattern;             // Pattern transitioning to
+uniform float u_transition_duration;  // Duration in seconds (for timing effects)
+
+// Define the group IDs for each facial feature
+const int EYES_GROUP = 2;        // Group for eyes
+const int EYEBROWS_GROUP = 4;    // Group for eyebrows/brows
+const int NOSE_GROUP = 1;        // Group for nose
+const int TEETH_GROUP = 3;       // Group for teeth/mouth
+const int MANE_GROUP = 7;        // Group for mane
+const int CHEEKS_GROUP = 6;      // Group for cheeks
+const int EARS_GROUP = 5;        // Group for ears
 
 // Sample group data from the bar-group mapping texture (9x9 resolution)
 vec4 sampleGroupTexture(int bar_id) {
@@ -815,16 +841,6 @@ vec3 animateAnatomicalExpression(vec2 uv, vec4 pos, float group_id) {
     vec4 groupData = sampleGroupTexture(bar_id);
     int group = int(groupData.g + 0.5); // Round to nearest integer (1-based)
     
-    // Define the group IDs for each facial feature
-    // These should match your actual group assignments
-    const int EYES_GROUP = 2;        // Group for eyes
-    const int EYEBROWS_GROUP = 4;    // Group for eyebrows/brows
-    const int NOSE_GROUP = 1;        // Group for nose
-    const int TEETH_GROUP = 3;       // Group for teeth/mouth
-    const int MANE_GROUP = 7;        // Group for mane
-    const int CHEEKS_GROUP = 6;      // Group for cheeks
-    const int EARS_GROUP = 5;        // Group for ears
-    
     // Base color for inactive parts (dim)
     vec3 baseColor = u_base_color * 0.15;
     
@@ -1089,6 +1105,1064 @@ vec3 sampleTexture(vec4 pos) {
     }
 }
 
+// NEW FUNCTIONS FOR INDEPENDENT FACIAL FEATURE CONTROL
+
+// Eyes animation function with multiple modes
+vec3 animateEyes(vec2 uv, vec4 pos, float group_id) {
+    float distance = pos.y;  // Normalized distance in G channel
+    float angle = pos.x;     // Normalized angle in R channel
+    int bar_id = int(pos.z); // Integer bar ID from B channel
+    float bar_pos = pos.w;   // Position along bar (0-1) in A channel
+    
+    // Verify we're working with eye group data
+    vec4 groupData = sampleGroupTexture(bar_id);
+    int group = int(groupData.g + 0.5); // Round to nearest integer
+    if (group != EYES_GROUP) {
+        // Not part of eyes group, return dim base color
+        return u_base_color * 0.2;
+    }
+    
+    // Base color (dim glow for inactive areas)
+    vec3 baseColor = u_base_color * 0.2;
+    float intensity = 0.0;
+    
+    // Adjust for left/right eye
+    bool is_left_eye = angle < 0.5;
+    
+    // Approximation: Eyes are at approximately 0.25 and 0.75 angles
+    float eye_center = is_left_eye ? 0.25 : 0.75;
+    
+    // Calculate distance from eye center (in angular space)
+    // Increase the effective radius of eye effect
+    float eye_angle_dist = abs(angle - eye_center);
+    
+    // Calculate proximity to eye center (1.0 at center, 0.0 far away)
+    // Increased from 0.15 to 0.25 for wider spread
+    float eye_proximity = 1.0 - smoothstep(0.0, 0.25, eye_angle_dist);
+    
+    // Add vertical expansion based on distance
+    // This helps the effect spread up and down from the eye centers
+    float vertical_factor = 1.0 - smoothstep(0.0, 0.5, distance);
+    eye_proximity *= (0.7 + 0.3 * vertical_factor);
+    
+    // Different eye animation modes
+    if (u_eyes_mode == 0) {
+        // Steady glow
+        intensity = 0.7 * eye_proximity;
+        
+        // Add subtle breathing effect
+        float breath = 0.2 * sin(u_time * 0.5);
+        intensity += breath * eye_proximity;
+        
+        // Add subtle background glow for wider eye region
+        intensity = max(intensity, 0.2 * eye_proximity);
+    }
+    else if (u_eyes_mode == 1) {
+        // Natural blinking effect with randomization and proper closed phase
+        
+        // Use multiple time scales to create pseudo-random blink timing
+        float base_time = u_time * 0.1;  // Slow time base
+        
+        // Create a compound time value using sine waves at different frequencies
+        // This creates a non-repeating pattern that feels random but is deterministic
+        float compound_time = base_time + 
+                             0.3 * sin(base_time * 0.763) + 
+                             0.2 * sin(base_time * 1.547) +
+                             0.1 * sin(base_time * 3.891);
+                             
+        // Sample noise to determine when blinks should occur
+        float noise_val = noise(vec2(compound_time, 0.42));
+        
+        // Blink threshold - higher value = less frequent blinks
+        // Humans blink roughly every 4-6 seconds on average
+        float blink_threshold = 0.85;  // Only blink when noise exceeds this value
+        
+        // Blink duration in seconds (real blinks take ~0.3-0.4 seconds total)
+        float blink_duration = 0.4;
+        
+        // Calculate blink time in seconds and blink progress
+        float blink_time_offset = 0.0;
+        float blink_progress = 0.0;
+        bool is_blinking = false;
+        
+        // Check if we should be in a blink right now
+        if (noise_val > blink_threshold) {
+            // Calculate how far into the blink we are
+            float time_since_blink_trigger = mod(u_time, 15.0) - compound_time;
+            
+            // Only process if we're within the blink duration
+            if (time_since_blink_trigger < blink_duration) {
+                is_blinking = true;
+                blink_progress = time_since_blink_trigger / blink_duration;
+            }
+        }
+        
+        // Now calculate the blink curve
+        float blink_amount = 0.0;
+        if (is_blinking) {
+            // Natural blink curve has three phases:
+            // 1. Quick closing (0.0-0.3)
+            // 2. Fully closed (0.3-0.7)
+            // 3. Quick opening (0.7-1.0)
+            
+            if (blink_progress < 0.3) {
+                // Eyelids closing - use smoothstep for natural easing
+                blink_amount = smoothstep(0.0, 1.0, blink_progress / 0.3);
+            } 
+            else if (blink_progress < 0.7) {
+                // Eyes fully closed
+                blink_amount = 1.0;
+            }
+            else {
+                // Eyelids opening - use smoothstep for natural easing
+                blink_amount = smoothstep(1.0, 0.0, (blink_progress - 0.7) / 0.3);
+            }
+        }
+        
+        // Apply blink (reduces intensity when blinking)
+        // When fully closed (blink_amount = 1.0), the eyes should be very dark
+        float open_intensity = eye_proximity * 0.8;
+        float closed_intensity = eye_proximity * 0.05; // Nearly black when closed
+        intensity = mix(open_intensity, closed_intensity, blink_amount);
+        
+        // Add subtle breathing effect when eyes are open
+        float breath = 0.1 * sin(u_time * 0.7);
+        intensity += breath * eye_proximity * (1.0 - blink_amount);
+        
+        // Add wider glow around eyes (dimmer when blinking)
+        float glow_intensity = 0.2 * eye_proximity * (1.0 - blink_amount * 0.8);
+        intensity = max(intensity, glow_intensity);
+    }
+    else if (u_eyes_mode == 2) {
+        // Looking around effect - shift the bright spot
+        float look_cycle = 8.0; // seconds to complete a look cycle
+        float look_phase = mod(u_time, look_cycle) / look_cycle;
+        
+        // Calculate look direction offset
+        // At phase 0.25: looking right
+        // At phase 0.75: looking left
+        float look_offset = 0.06 * sin(look_phase * 6.28318); // +/- 0.06 angle shift
+        
+        // Adjust eye center based on looking direction
+        float adjusted_eye_center = eye_center + look_offset;
+        
+        // Recalculate distance from adjusted eye center
+        float adjusted_eye_dist = abs(angle - adjusted_eye_center);
+        
+        // Recalculate proximity with the adjusted center
+        float adjusted_proximity = 1.0 - smoothstep(0.0, 0.15, adjusted_eye_dist);
+        
+        // Apply the adjusted intensity
+        intensity = 0.8 * adjusted_proximity;
+    }
+    else if (u_eyes_mode == 3) {
+        // Alert/wide eyes mode with pupil dilation
+        // Simulate dilated pupils with brighter centers
+        
+        // Make the bright spot smaller but more intense (dilated pupil)
+        float pupil_size = 0.1; // Slightly larger pupil (was 0.08)
+        float pupil_dist = abs(angle - eye_center);
+        float pupil_proximity = 1.0 - smoothstep(0.0, pupil_size, pupil_dist);
+        
+        // Create wider eye glow for alert look
+        float eye_glow_size = 0.25; // Wider glow area (previous value was eye_proximity)
+        float eye_glow_dist = abs(angle - eye_center);
+        float eye_glow = 1.0 - smoothstep(0.0, eye_glow_size, eye_glow_dist);
+        
+        // Add pulsing to simulate alertness
+        float alert_pulse = 0.5 + 0.5 * sin(u_time * 3.0); // Faster pulsing
+        
+        // Combine for final intensity - bright pupil with moderate surround
+        float pupil_intensity = 0.9 * pupil_proximity;
+        float surround_intensity = 0.6 * eye_glow; // Increased from 0.5 to 0.6
+        
+        intensity = max(pupil_intensity, surround_intensity);
+        
+        // Add the alert pulse effect with wider spread
+        intensity += 0.15 * alert_pulse * eye_glow; // Increased from 0.1 to 0.15
+    }
+    else if (u_eyes_mode == 4) {
+        // Progressive pixel animation along each bar
+        // Each bar fills from pixel 1 to 50 in 1 second, then back in 0.3 seconds
+        
+        // Calculate the cycle time (1.0s fill + 0.3s empty = 1.3s total)
+        float cycle_duration = 1.3;
+        float cycle_phase = mod(u_time, cycle_duration) / cycle_duration;
+        
+        // Determine if we're in the filling phase (0-0.77) or emptying phase (0.77-1.0)
+        // 1.0s out of 1.3s total is ~0.77 of the cycle
+        bool filling_phase = cycle_phase < 0.77;
+        
+        // Calculate progress within the current phase
+        float phase_progress;
+        if (filling_phase) {
+            // Normalize progress within the 1.0s filling phase
+            phase_progress = cycle_phase / 0.77;
+        } else {
+            // Normalize progress within the 0.3s emptying phase
+            phase_progress = (cycle_phase - 0.77) / 0.23;
+        }
+        
+        // Now determine the cutoff position along the bar
+        float cutoff_position;
+        
+        if (filling_phase) {
+            // During filling: move from position 0 to 1
+            cutoff_position = phase_progress;
+        } else {
+            // During emptying: move from position 1 back to 0
+            cutoff_position = 1.0 - phase_progress;
+        }
+        
+        // Determine if this specific point on the bar is "on" based on position
+        // We want a sharp transition point that moves along the bar
+        float transition_width = 0.05; // Width of the transition zone
+        
+        // Calculate distance from the cutoff point
+        float dist_from_cutoff = bar_pos - cutoff_position;
+        
+        // Calculate intensity based on position relative to cutoff
+        // Points behind the cutoff get full intensity, ahead get zero
+        float fill_amount;
+        
+        if (dist_from_cutoff < 0.0) {
+            // Behind the cutoff - fully on
+            fill_amount = 1.0;
+        } 
+        else if (dist_from_cutoff < transition_width) {
+            // In the transition zone - gradual falloff
+            fill_amount = 1.0 - (dist_from_cutoff / transition_width);
+        }
+        else {
+            // Ahead of the cutoff - fully off
+            fill_amount = 0.0;
+        }
+        
+        // Apply the fill amount to the intensity
+        float filled_intensity = eye_proximity * 0.8;
+        float empty_intensity = eye_proximity * 0.05; // Nearly black when empty
+        intensity = mix(empty_intensity, filled_intensity, fill_amount);
+        
+        // Add wider glow around eyes
+        float glow_intensity = 0.2 * eye_proximity;
+        intensity = max(intensity, glow_intensity);
+    }
+    
+    // Apply user-defined intensity multiplier
+    intensity *= u_eyes_intensity;
+    
+    // Clamp to valid range
+    intensity = clamp(intensity, 0.0, 1.0);
+    
+    // Create the final color
+    return mix(baseColor, u_eyes_color, intensity);
+}
+
+// Teeth animation function with multiple modes
+vec3 animateTeeth(vec2 uv, vec4 pos, float group_id) {
+    float distance = pos.y;  // Normalized distance in G channel
+    float angle = pos.x;     // Normalized angle in R channel
+    int bar_id = int(pos.z); // Integer bar ID from B channel
+    float bar_pos = pos.w;   // Position along bar (0-1) in A channel
+    
+    // Verify we're working with teeth group data
+    vec4 groupData = sampleGroupTexture(bar_id);
+    int group = int(groupData.g + 0.5); // Round to nearest integer
+    if (group != TEETH_GROUP) {
+        // Not part of teeth group, return dim base color
+        return u_base_color * 0.2;
+    }
+    
+    // Base color (dim glow for inactive teeth)
+    vec3 baseColor = u_base_color * 0.2;
+    float intensity = 0.0;
+    
+    // Different teeth animation modes
+    if (u_teeth_mode == 0) {
+        // Steady glow for teeth
+        intensity = 0.7;
+        
+        // Add subtle breathing variation
+        float breath = 0.15 * sin(u_time * 0.6);
+        intensity += breath;
+    }
+    else if (u_teeth_mode == 1) {
+        // Chattering/pulsing teeth
+        float chatter_speed = 8.0; // Adjust for faster/slower chattering
+        float chatter_phase = sin(u_time * chatter_speed) * 0.5 + 0.5;
+        
+        // Create a pulsing effect with some randomization
+        float random_offset = random(vec2(bar_id, 0.42)) * 0.2; // Per-bar variation
+        float chatter_effect = chatter_phase + random_offset;
+        
+        // Apply chattering effect
+        intensity = 0.5 + 0.5 * chatter_effect;
+    }
+    else if (u_teeth_mode == 2) {
+        // Snarling effect - progressive activation from back to front
+        // In a snarl, teeth are revealed gradually from one side to the other
+        
+        // Create a slow side-to-side snarl motion
+        float snarl_cycle = 6.0; // seconds per snarl cycle
+        float snarl_phase = mod(u_time, snarl_cycle) / snarl_cycle;
+        
+        // Triangle wave pattern for back-and-forth movement
+        float triangle_wave;
+        if (snarl_phase < 0.5) {
+            triangle_wave = snarl_phase * 2.0; // 0 to 1
+        } else {
+            triangle_wave = 2.0 - snarl_phase * 2.0; // 1 to 0
+        }
+        
+        // Direction of the snarl wave (left to right or right to left)
+        float snarl_pos = angle; // Use angle directly for side-to-side
+        
+        // Calculate snarl effect - teeth light up as the wave passes over them
+        float snarl_threshold = triangle_wave; // Position of the snarl wave (0-1)
+        float snarl_width = 0.3; // Width of the active snarl region
+        
+        // Calculate proximity to the snarl wave
+        float dist_from_snarl = abs(snarl_pos - snarl_threshold);
+        float snarl_proximity = 1.0 - smoothstep(0.0, snarl_width, dist_from_snarl);
+        
+        // Create the snarl effect
+        intensity = 0.3 + 0.7 * snarl_proximity;
+    }
+    else if (u_teeth_mode == 3) {
+        // Roaring effect - teeth fully bared with pulsing intensity
+        // Create a strong pulsing effect with some variation across teeth
+        
+        // Base roar intensity - strong
+        float roar_base = 0.8;
+        
+        // Add pulsing to simulate roaring
+        float roar_pulse_rate = 5.0; // Adjust for different roar speeds
+        float roar_pulse = 0.2 * sin(u_time * roar_pulse_rate);
+        
+        // Add some variation based on position
+        float variation = 0.1 * sin(bar_pos * 20.0 + u_time * 3.0);
+        
+        // Combine for final roar effect
+        intensity = roar_base + roar_pulse + variation;
+    }
+    
+    // Apply user-defined intensity multiplier
+    intensity *= u_teeth_intensity;
+    
+    // Clamp to valid range
+    intensity = clamp(intensity, 0.0, 1.0);
+    
+    // Create the final color
+    return mix(baseColor, u_teeth_color, intensity);
+}
+
+// NEW: Pattern Transition Functions
+
+// Basic crossfade transition between any two patterns (fallback)
+vec3 crossfadeTransition(vec2 uv, vec4 pos, float group_id, float progress) {
+    // Get colors from both patterns
+    vec3 fromColor, toColor;
+    
+    // Calculate the 'from' pattern color
+    if (u_from_pattern == 0) fromColor = animateWave(uv, pos, group_id);
+    else if (u_from_pattern == 1) fromColor = animateBreathing(uv, pos, group_id);
+    else if (u_from_pattern == 2) fromColor = animateGroupSequence(uv, pos, group_id);
+    else if (u_from_pattern == 3) fromColor = animateRoaring(uv, pos, group_id);
+    else if (u_from_pattern == 4) fromColor = animateGlitter(uv, pos, group_id);
+    else if (u_from_pattern == 5) fromColor = animateBarPattern(uv, pos, group_id);
+    else if (u_from_pattern == 6) fromColor = animateRandomBars(uv, pos, group_id);
+    else if (u_from_pattern == 7) fromColor = animateSingleBar(uv, pos, group_id);
+    else if (u_from_pattern == 8) fromColor = animateSymmetricalPulse(uv, pos, group_id);
+    else if (u_from_pattern == 9) fromColor = animateVerticalCascade(uv, pos, group_id);
+    else if (u_from_pattern == 10) fromColor = animateSymmetricalChase(uv, pos, group_id);
+    else if (u_from_pattern == 11) fromColor = animateAxisRipple(uv, pos, group_id);
+    else if (u_from_pattern == 12) fromColor = animateNoseLines(uv, pos, group_id);
+    else if (u_from_pattern == 13) fromColor = animateGroupHighlight(uv, pos, group_id);
+    else if (u_from_pattern == 14) fromColor = debugGroupVisualization(uv, pos, group_id);
+    else if (u_from_pattern == 15) fromColor = animateAnatomicalExpression(uv, pos, group_id);
+    else fromColor = animateWave(uv, pos, group_id);
+    
+    // Calculate the 'to' pattern color
+    if (u_to_pattern == 0) toColor = animateWave(uv, pos, group_id);
+    else if (u_to_pattern == 1) toColor = animateBreathing(uv, pos, group_id);
+    else if (u_to_pattern == 2) toColor = animateGroupSequence(uv, pos, group_id);
+    else if (u_to_pattern == 3) toColor = animateRoaring(uv, pos, group_id);
+    else if (u_to_pattern == 4) toColor = animateGlitter(uv, pos, group_id);
+    else if (u_to_pattern == 5) toColor = animateBarPattern(uv, pos, group_id);
+    else if (u_to_pattern == 6) toColor = animateRandomBars(uv, pos, group_id);
+    else if (u_to_pattern == 7) toColor = animateSingleBar(uv, pos, group_id);
+    else if (u_to_pattern == 8) toColor = animateSymmetricalPulse(uv, pos, group_id);
+    else if (u_to_pattern == 9) toColor = animateVerticalCascade(uv, pos, group_id);
+    else if (u_to_pattern == 10) toColor = animateSymmetricalChase(uv, pos, group_id);
+    else if (u_to_pattern == 11) toColor = animateAxisRipple(uv, pos, group_id);
+    else if (u_to_pattern == 12) toColor = animateNoseLines(uv, pos, group_id);
+    else if (u_to_pattern == 13) toColor = animateGroupHighlight(uv, pos, group_id);
+    else if (u_to_pattern == 14) toColor = debugGroupVisualization(uv, pos, group_id);
+    else if (u_to_pattern == 15) toColor = animateAnatomicalExpression(uv, pos, group_id);
+    else toColor = animateWave(uv, pos, group_id);
+    
+    // Simple linear interpolation
+    return mix(fromColor, toColor, progress);
+}
+
+// Custom transition: Roaring to Group Sequence
+// Energy ripples from mouth outward to mane
+vec3 roaringToGroupSequenceTransition(vec2 uv, vec4 pos, float group_id, float progress) {
+    float distance = pos.y;  // Normalized distance in G channel
+    float angle = pos.x;     // Normalized angle in R channel
+    int bar_id = int(pos.z); // Integer bar ID from B channel
+    
+    // Sample group data to identify which facial feature this is
+    vec4 groupData = sampleGroupTexture(bar_id);
+    int group = int(groupData.g + 0.5); // Round to nearest integer
+    
+    // Calculate the transition wave that travels outward from the mouth (teeth)
+    // The wave moves from distance 0 (mouth) to distance 1 (edge) based on progress
+    float wave_position = progress * 1.5; // Go slightly beyond to ensure complete transition
+    
+    // Adjust intensity based on distance from the wave front
+    float wave_width = 0.3; // Width of transition wave
+    float dist_from_wave = abs(distance - wave_position);
+    float wave_intensity = 1.0 - smoothstep(0.0, wave_width, dist_from_wave);
+    
+    // Get the colors from both patterns
+    vec3 roaringColor = animateRoaring(uv, pos, group_id);
+    vec3 groupSequenceColor = animateGroupSequence(uv, pos, group_id);
+    
+    // Custom color for the transition wave - fiery orange
+    vec3 waveHighlight = vec3(1.0, 0.5, 0.0); 
+    
+    // Determine how to blend based on the wave position
+    vec3 resultColor;
+    
+    if (distance < wave_position - wave_width * 0.5) {
+        // Area behind wave front (closer to mouth) - already transitioned to new pattern
+        resultColor = groupSequenceColor;
+    }
+    else if (dist_from_wave < wave_width) {
+        // Within the wave front - add highlight and blend
+        // Mix in some of the wave highlight based on proximity to wave center
+        float highlight_amount = (1.0 - dist_from_wave / wave_width) * 0.7;
+        resultColor = mix(roaringColor, groupSequenceColor, progress);
+        resultColor = mix(resultColor, waveHighlight, highlight_amount);
+    }
+    else {
+        // Area ahead of wave front (farther from mouth) - still using old pattern 
+        resultColor = roaringColor;
+    }
+    
+    // Special effect for mouth area (TEETH_GROUP)
+    if (group == TEETH_GROUP) {
+        // Teeth/mouth starts the transition with a bright flash 
+        float flash_intensity = max(0.0, 1.0 - progress * 3.0); // Flash during first third
+        resultColor = mix(resultColor, waveHighlight, flash_intensity);
+    }
+    
+    // Special effect for mane area (MANE_GROUP)
+    if (group == MANE_GROUP) {
+        // Mane "catches fire" as the wave approaches
+        // Calculate distance from wave to mane
+        float wave_to_mane = max(0.0, distance - wave_position);
+        // Pre-glow effect that appears before the wave arrives
+        float pre_glow = max(0.0, 1.0 - wave_to_mane / (wave_width * 2.0));
+        pre_glow = pre_glow * pre_glow; // Square to make the effect more focused
+        resultColor = mix(resultColor, waveHighlight, pre_glow * 0.3);
+    }
+    
+    return resultColor;
+}
+
+// Custom transition: Wave to Glitter
+// Wave pattern "breaks apart" into glitter particles
+vec3 waveToGlitterTransition(vec2 uv, vec4 pos, float group_id, float progress) {
+    // Extract position data
+    float distance = pos.y;
+    float angle = pos.x;
+    
+    // During the transition we'll:
+    // 1. Start with the wave pattern
+    // 2. Gradually increase the noise/glitter frequency and randomness
+    // 3. Reduce the wave coherence until it fully breaks apart
+    
+    // Get base colors from patterns
+    vec3 waveColor = animateWave(uv, pos, group_id);
+    vec3 glitterColor = animateGlitter(uv, pos, group_id);
+    
+    // Calculate transition-specific effects
+    
+    // 1. Wave pattern becomes increasingly distorted
+    float wave_t = u_time * 0.05 * u_wave_speed;
+    float wave_position = mod(wave_t, 1.0 + u_wave_width);
+    float distance_from_wave = abs(distance - wave_position);
+    
+    // Add increasing distortion to the wave
+    float distortion_amount = progress * 0.5;
+    distance_from_wave += distortion_amount * noise(vec2(angle * 20.0, u_time * 2.0));
+    
+    // Calculate wave intensity with distortion
+    float wave_intensity = 0.05;  // Base intensity
+    if (distance_from_wave < u_wave_width) {
+        float wave_contribution = 1.0 - (distance_from_wave / u_wave_width);
+        wave_contribution = sin(wave_contribution * 3.14159 / 2.0);
+        wave_intensity += (1.0 - 0.05) * wave_contribution;
+    }
+    
+    // 2. Gradually introduce glitter particles
+    // Scale glitter density based on progress
+    float transition_glitter_density = mix(0.05, u_glitter_density, progress);
+    
+    // Create glitter effect with increasing density
+    float scale = 50.0 + progress * 30.0;  // Increase density of glitter points
+    vec2 scaledPos = vec2(angle * scale, distance * scale * 2.0);
+    
+    float t = u_time * u_glitter_speed;
+    
+    // Increase noise complexity as transition progresses
+    float n1 = noise(scaledPos + vec2(t, t * 0.5));
+    float n2 = noise(scaledPos * 1.5 + vec2(-t * 0.7, t * 0.3));
+    float n3 = noise(scaledPos * 0.5 + vec2(t * 0.2, -t * 0.6));
+    
+    // Combine with increasing weight on complexity
+    float combined = mix(n1, (n1 * 0.5 + n2 * 0.3 + n3 * 0.2), progress);
+    
+    // Calculate glitter effect with increasing density
+    float threshold = 1.0 - transition_glitter_density;
+    float glitter = (combined > threshold) ? pow((combined - threshold) / (1.0 - threshold), 2.0) : 0.0;
+    
+    // Adjust glitter brightness based on distance and progress
+    float distanceEffect = 1.0 - distance * 0.5;
+    glitter *= distanceEffect;
+    
+    // 3. Blend between wave and glitter effects
+    // Base color (dim green)
+    vec3 baseColor = u_base_color * 0.2;
+    
+    // Create wave component with decreasing intensity
+    vec3 waveComponent = mix(u_base_color, u_highlight_color, wave_intensity);
+    
+    // Create glitter component with increasing intensity
+    vec3 glitterEffect = u_highlight_color * glitter * (1.0 + progress * 0.5);
+    
+    // Blend base color with calculated effects
+    vec3 transitionColor = baseColor;
+    
+    // Add wave component (decaying with progress)
+    transitionColor = mix(transitionColor, waveComponent, 1.0 - progress);
+    
+    // Add glitter component (increasing with progress)
+    transitionColor += glitterEffect * progress;
+    
+    // Add sparkles that appear to break off from the wave
+    if (distance_from_wave < u_wave_width + 0.1) {
+        float sparkle_chance = noise(vec2(angle * 30.0 + u_time, distance * 20.0));
+        if (sparkle_chance > 0.7 && sparkle_chance < 0.7 + 0.2 * progress) {
+            // Create sparkles that break off from the wave
+            float sparkle_brightness = (sparkle_chance - 0.7) / 0.2 * progress;
+            transitionColor = mix(transitionColor, u_highlight_color, sparkle_brightness);
+        }
+    }
+    
+    return transitionColor;
+}
+
+// Custom transition: Breathing to Vertical Cascade
+// Breathing animation accelerates then collapses into a top-down cascade
+vec3 breathingToVerticalCascadeTransition(vec2 uv, vec4 pos, float group_id, float progress) {
+    float distance = pos.y;  // Normalized distance in G channel
+    float angle = pos.x;     // Normalized angle in R channel
+    
+    // Get base colors from patterns
+    vec3 breathingColor = animateBreathing(uv, pos, group_id);
+    vec3 cascadeColor = animateVerticalCascade(uv, pos, group_id);
+    
+    // Modify the breathing timing during transition
+    // Make breathing increasingly faster in first half of transition
+    float breathing_rate;
+    if (progress < 0.5) {
+        // Accelerate breathing rate (0.5 to 4.0)
+        breathing_rate = 0.5 + progress * 7.0;
+    } else {
+        // Keep maximum breathing rate
+        breathing_rate = 4.0;
+    }
+    
+    // Calculate enhanced breathing phase with modified timing
+    float enhanced_phase = (sin(u_time * breathing_rate) + 1.0) / 2.0;
+    
+    // Approximate vertical position (0 = top, 1 = bottom)
+    // This is a heuristic similar to the vertical cascade implementation
+    float vertical_pos;
+    
+    // Front of face (nose area) - use primarily angle-based
+    if (distance < 0.3) {
+        // Bottom of face (closer to 0.5 angle which is bottom)
+        vertical_pos = abs(angle - 0.5) < 0.2 ? 0.8 + distance : 0.5 + distance;
+    }
+    // Middle of face (eyes, brows) - blend
+    else if (distance < 0.6) {
+        vertical_pos = 0.4 + (1.0 - abs(angle - 0.5)) * 0.4;
+    }
+    // Back of head/mane - higher up
+    else {
+        vertical_pos = 0.3 * distance;
+    }
+    
+    // Create a collapse effect in the second half of the transition
+    // This is a vertical wave moving from top to bottom
+    float collapse_position = 0.0;
+    float collapse_width = 0.3;
+    
+    if (progress > 0.5) {
+        // Map progress 0.5-1.0 to collapse position 0.0-1.5
+        collapse_position = (progress - 0.5) * 3.0;
+        
+        // Distance from current position to collapse front
+        float dist_from_collapse = vertical_pos - collapse_position;
+        
+        // Points above the collapse line use breathing
+        // Points below use cascade with increasing intensity
+        if (dist_from_collapse > 0.0) {
+            // Above collapse line - modified breathing
+            float brightness = enhanced_phase * (1.0 - distance * 0.5);
+            return mix(u_base_color, u_highlight_color, brightness);
+        }
+        else if (dist_from_collapse > -collapse_width) {
+            // In the transition zone - blend with cascade effect
+            float zone_progress = -dist_from_collapse / collapse_width;
+            float brightness = enhanced_phase * (1.0 - distance * 0.5) * (1.0 - zone_progress);
+            vec3 transitionColor = mix(u_base_color, u_highlight_color, brightness);
+            
+            // Add bright highlight at the collapse wave edge
+            float edge_highlight = smoothstep(0.0, 0.1, zone_progress) * smoothstep(0.3, 0.2, zone_progress);
+            transitionColor = mix(transitionColor, u_highlight_color, edge_highlight * 0.7);
+            
+            // Mix with cascade as we move through the transition zone
+            return mix(transitionColor, cascadeColor, zone_progress);
+        }
+        else {
+            // Below collapse line - already using cascade
+            return cascadeColor;
+        }
+    }
+    
+    // In the first half of the transition, just use accelerated breathing
+    float breathing_brightness = enhanced_phase * (1.0 - distance * 0.5);
+    
+    // Gradually introduce some vertical streaking to hint at the coming cascade
+    float vertical_streaks = 0.0;
+    if (progress > 0.3) {
+        // Create subtle vertical streaking effect
+        float streak_amount = (progress - 0.3) / 0.2; // 0->1 as progress goes 0.3->0.5
+        float streak_pattern = sin(vertical_pos * 20.0 + u_time * 2.0);
+        vertical_streaks = streak_pattern * streak_pattern * streak_amount * 0.2;
+    }
+    
+    // Combine breathing with vertical streaks
+    breathing_brightness = clamp(breathing_brightness + vertical_streaks, 0.0, 1.0);
+    
+    return mix(u_base_color, u_highlight_color, breathing_brightness);
+}
+
+// Custom transition: Symmetrical Pulse to Axis Ripple
+// Pulses converge inward to center, then explode outward as ripples along axes
+vec3 symmetricalPulseToAxisRippleTransition(vec2 uv, vec4 pos, float group_id, float progress) {
+    float angle = pos.x;         // Normalized angle in R channel
+    float distance = pos.y;      // Normalized distance in G channel
+    
+    // Get colors from both patterns for reference
+    vec3 pulseColor = animateSymmetricalPulse(uv, pos, group_id);
+    vec3 rippleColor = animateAxisRipple(uv, pos, group_id);
+    
+    // Convert angle to radians for axis calculations
+    float angle_rad = angle * 2.0 * 3.14159;
+    
+    // PHASE 1 (0.0-0.4): Pulses converge toward center
+    if (progress < 0.4) {
+        // Normalize to 0-1 for the first phase
+        float phase1_progress = progress / 0.4;
+        
+        // Modify the pulse timing to create a "sucking in" effect
+        float pulse_rate = 0.05 * u_wave_speed * (1.0 + phase1_progress * 3.0); // Accelerating pulse
+        float t = u_time * pulse_rate;
+        
+        // Create multiple pulse zones converging toward center
+        const float NUM_ZONES = 4.0;
+        float zone_size = 1.0 / NUM_ZONES;
+        float zone_index = floor(angle * NUM_ZONES);
+        
+        // Calculate angular distance within each zone
+        float zone_center = (zone_index + 0.5) * zone_size;
+        float angle_dist_in_zone = abs(angle - zone_center) / zone_size * 2.0;
+        
+        // Phase delay gets smaller as progress increases (pulses converge)
+        float max_delay = 0.5 * (1.0 - phase1_progress);
+        float phase_delay = distance * max_delay;
+        
+        // Calculate converging pulse waves
+        float pulse_phase = sin(t - phase_delay);
+        pulse_phase = (pulse_phase + 1.0) * 0.5;
+        
+        // Calculate symmetry factor that increases focus toward center
+        float center_focus = phase1_progress * 0.7; // Gradually increase center focus
+        float symmetry_factor = 1.0 - (angle_dist_in_zone * (0.7 - center_focus));
+        
+        // Calculate radial convergence - pulses move inward
+        float convergence_factor = phase1_progress;
+        float radial_effect = 1.0 - distance * (1.0 - convergence_factor);
+        
+        // Combine effects
+        float intensity = pulse_phase * symmetry_factor * radial_effect;
+        
+        // Add a brightening center as energy converges
+        float center_brightness = phase1_progress * max(0.0, 1.0 - distance / 0.3);
+        intensity = max(intensity, center_brightness);
+        
+        // Apply color
+        return mix(u_base_color, u_highlight_color, intensity);
+    }
+    // PHASE 2 (0.4-0.6): Energy builds at center and axis structure forms
+    else if (progress < 0.6) {
+        // Normalize to 0-1 for the second phase
+        float phase2_progress = (progress - 0.4) / 0.2;
+        
+        // Create a bright energy core that grows at the center
+        float core_size = 0.1 + phase2_progress * 0.2;
+        float core_intensity = (1.0 - smoothstep(0.0, core_size, distance)) * 0.8;
+        
+        // Create axis structure that extends from the core
+        // Calculate the stretched distance value along cardinal axes
+        float axis_stretch = 1.0 + phase2_progress * 4.0; // Gradually extend axes
+        
+        // X and Y axis stretch factors
+        float stretch_x = axis_stretch;
+        float stretch_y = axis_stretch;
+        
+        // Calculate the stretched distance value
+        float stretched_distance = distance * sqrt(
+            pow(cos(angle_rad) * stretch_x, 2.0) + 
+            pow(sin(angle_rad) * stretch_y, 2.0)
+        );
+        
+        // Create energy along the axes
+        float axis_distance = stretched_distance * 0.5;
+        float axis_intensity = max(0.0, 1.0 - smoothstep(0.0, 0.3, axis_distance));
+        axis_intensity *= phase2_progress; // Gradually increase axis effect
+        
+        // Pulsing energy at the core
+        float pulse_rate = 5.0 + phase2_progress * 10.0; // Accelerating pulse
+        float pulse = 0.5 + 0.5 * sin(u_time * pulse_rate);
+        
+        // Add pulsing to core intensity
+        core_intensity += pulse * 0.2 * (1.0 - distance / 0.3);
+        
+        // Combine core and axis effects
+        float intensity = max(core_intensity, axis_intensity);
+        
+        // Mix in some ripple color as the structure forms
+        vec3 baseColor = mix(u_base_color, u_highlight_color, intensity);
+        return mix(baseColor, rippleColor, phase2_progress * 0.3);
+    }
+    // PHASE 3 (0.6-1.0): Energy explodes outward as axis ripples
+    else {
+        // Normalize to 0-1 for the final phase
+        float phase3_progress = (progress - 0.6) / 0.4;
+        
+        // Start with the full ripple pattern
+        vec3 finalRippleColor = rippleColor;
+        
+        // Add an explosion wave during the transition
+        float explosion_radius = phase3_progress * 1.5; // Expands beyond screen
+        float dist_from_explosion = abs(distance - explosion_radius);
+        
+        // Create bright wave at the explosion front
+        float explosion_width = 0.2;
+        if (dist_from_explosion < explosion_width) {
+            float explosion_intensity = 1.0 - (dist_from_explosion / explosion_width);
+            explosion_intensity = sin(explosion_intensity * 3.14159 / 2.0);
+            
+            // Brighten the ripple color at the explosion front
+            finalRippleColor = mix(finalRippleColor, u_highlight_color, explosion_intensity * 0.6);
+        }
+        
+        return finalRippleColor;
+    }
+}
+
+// Custom transition: Random Bars to Bar Pattern
+// Random flickering gradually synchronizes into organized bar waves
+vec3 randomBarsToBarPatternTransition(vec2 uv, vec4 pos, float group_id, float progress) {
+    // Extract bar data from position map
+    int bar_id = int(pos.z);     // Integer bar ID from B channel
+    float bar_pos = pos.w;       // Position along bar (0-1) in A channel
+    
+    // Get colors from both patterns
+    vec3 randomColor = animateRandomBars(uv, pos, group_id);
+    vec3 barPatternColor = animateBarPattern(uv, pos, group_id);
+    
+    // The transition concept:
+    // 1. Start with random flickering
+    // 2. Gradually synchronize nearby bars
+    // 3. Form coherent waves that eventually become the bar pattern
+    
+    // PHASE 1: Modified random bars with increasing synchronization
+    // Create a normalized bar_id (0-1) for calculations
+    float normalized_bar_id = float(bar_id) / float(u_total_bars);
+    
+    // Create time-based noise that depends on bar ID
+    // Early in transition: each bar has unique timing
+    // Later in transition: bars synchronize in groups
+    
+    // Determine the synchronization group size (smaller number = more synced)
+    // Start with very fine-grained randomization, end with just a few groups
+    float sync_granularity = max(0.01, 0.3 * (1.0 - progress));
+    
+    // Calculate the sync group this bar belongs to (synchronizes bars by proximity)
+    float sync_group = floor(normalized_bar_id / sync_granularity) * sync_granularity;
+    
+    // Time step that determines which bars are on/off
+    // Interpolate between bar-specific randomness and group-synchronized timing
+    float individual_time_step = floor(u_time * u_blink_speed * (1.0 + normalized_bar_id));
+    float group_time_step = floor(u_time * u_blink_speed * (1.0 + sync_group));
+    float time_step = mix(individual_time_step, group_time_step, progress);
+    
+    // Generate random hash value for this bar at this time step
+    float hash_value = random(vec2(normalized_bar_id, time_step));
+    
+    // Determine if the bar should be on based on hash and density
+    // Increase density as transition progresses to make more bars active
+    float effective_density = mix(u_blink_density, 1.0, progress * 0.7);
+    bool bar_on = hash_value < effective_density;
+    
+    // PHASE 2: Gradually introduce wave-like pattern
+    // Wave position calculation (similar to bar pattern)
+    float t = u_time * 0.2 * u_wave_speed;
+    float wave_pos = mod(t, 2.0);  // Position of wave, cycles 0-2
+    
+    // Distance from current position to wave front
+    float dist = abs(bar_pos - mod(wave_pos, 1.0));
+    
+    // If wave_pos > 1, the wave is traveling back
+    if (wave_pos > 1.0) {
+        dist = abs(bar_pos - (2.0 - wave_pos));
+    }
+    
+    // Create pulse effect for the wave
+    float wave_intensity = 0.1;  // Base intensity
+    float pulse_width = 0.3 + 0.2 * progress;  // Wider pulse as transition progresses
+    
+    if (dist < pulse_width) {
+        // Inside pulse
+        float pulse = 1.0 - (dist / pulse_width);
+        // Smooth with sine curve
+        pulse = sin(pulse * 3.14159 / 2.0);
+        wave_intensity += (1.0 - 0.1) * pulse;
+    }
+    
+    // Calculate the transition color
+    vec3 transitionColor;
+    
+    if (bar_on) {
+        // For active bars, gradually introduce the wave pattern
+        float random_intensity = 0.3 + 0.7 * random(vec2(normalized_bar_id, bar_pos + time_step));
+        float wave_blend = smoothstep(0.0, 1.0, progress);
+        float final_intensity = mix(random_intensity, wave_intensity, wave_blend);
+        
+        // Add positional variation along bar for active bars
+        // This creates a subtle gradient effect
+        float pos_variation = 0.2 * (1.0 - pow(abs(bar_pos - 0.5) * 2.0, 2.0));
+        final_intensity += pos_variation * (1.0 - progress);
+        
+        transitionColor = mix(u_base_color, u_highlight_color, final_intensity);
+    } else {
+        // For inactive bars, gradually increase base glow
+        float base_glow = 0.05 * (1.0 + progress);
+        transitionColor = mix(u_base_color, u_highlight_color, base_glow);
+    }
+    
+    // In the last 20% of the transition, directly blend with the final pattern
+    if (progress > 0.8) {
+        float final_blend = (progress - 0.8) / 0.2;
+        transitionColor = mix(transitionColor, barPatternColor, final_blend);
+    }
+    
+    return transitionColor;
+}
+
+// Custom transition: Group Highlight to Nose Lines
+// Groups drain their energy into lines extending from the nose
+vec3 groupHighlightToNoseLinesTransition(vec2 uv, vec4 pos, float group_id, float progress) {
+    float distance = pos.y;        // Normalized distance in G channel
+    float angle = pos.x;           // Normalized angle in R channel
+    int bar_id = int(pos.z);       // Integer bar ID from B channel
+    float bar_pos = pos.w;         // Position along bar (0-1) in A channel
+    
+    // Sample group data to identify which facial feature this is
+    vec4 groupData = sampleGroupTexture(bar_id);
+    int group = int(groupData.g + 0.5); // Round to nearest integer
+    
+    // Get colors from both patterns
+    vec3 groupHighlightColor = animateGroupHighlight(uv, pos, group_id);
+    vec3 noseLinesColor = animateNoseLines(uv, pos, group_id);
+    
+    // The transition concept:
+    // 1. Groups flash/pulse more intensely during first phase
+    // 2. Lines start to form from nose toward each group
+    // 3. Groups dim as their energy "drains" into the lines
+    // 4. Lines fully form, groups fully dim, completing transition
+    
+    // Calculate transition timing:
+    // Phase 1 (0.0-0.3): Intensify group highlights
+    // Phase 2 (0.2-0.8): Lines gradually extend from nose
+    // Phase 3 (0.5-1.0): Groups gradually dim
+    
+    // PHASE 1: Enhanced group highlight (0.0-0.3)
+    float groupIntensity = 0.0;
+    if (progress < 0.3) {
+        // Get the base group highlight color
+        groupIntensity = length(groupHighlightColor - u_base_color) / length(u_highlight_color - u_base_color);
+        
+        // Enhance the pulsing to make it more intense
+        float phase1_progress = progress / 0.3;
+        float pulse_rate = 2.0 + phase1_progress * 5.0; // Accelerate pulsing
+        float enhanced_pulse = 0.5 + 0.5 * sin(u_time * pulse_rate + float(group) * 0.7);
+        
+        // Add enhanced pulsing to group intensity
+        groupIntensity += enhanced_pulse * 0.3 * phase1_progress;
+        groupIntensity = min(groupIntensity, 1.0); // Clamp to valid range
+    }
+    // PHASE 2+3: Continue with decreasing group intensity (0.3-1.0)
+    else {
+        // Calculate a dimming factor for the groups
+        float dimming_start = 0.5;
+        float dimming_factor = 1.0;
+        
+        if (progress > dimming_start) {
+            // Gradually dim the groups as energy flows to lines
+            dimming_factor = 1.0 - (progress - dimming_start) / (1.0 - dimming_start);
+        }
+        
+        // Get the base group highlight color with dimming applied
+        groupIntensity = length(groupHighlightColor - u_base_color) / length(u_highlight_color - u_base_color);
+        groupIntensity *= dimming_factor;
+    }
+    
+    // PHASE 2: Line formation from nose (0.2-0.8)
+    float lineIntensity = 0.0;
+    
+    // Only for bars (not individual points)
+    if (bar_id >= 0) {
+        // Nose lines logic: each bar grows outward from the nose at a different speed
+        if (progress > 0.2) {
+            // Map 0.2-0.8 progress to 0.0-1.0 line formation phase
+            float line_phase = (progress - 0.2) / 0.6;
+            line_phase = clamp(line_phase, 0.0, 1.0);
+            
+            // Generate a unique speed for each bar based on its ID
+            float bar_speed_factor = 0.5 + 0.8 * random(vec2(float(bar_id) / float(u_total_bars), 0.42));
+            
+            // Calculate the line expansion progress with unique speed
+            float active_segment = line_phase * bar_speed_factor;
+            active_segment = clamp(active_segment, 0.0, 1.0);
+            
+            // Check if this point's position along the bar is within the active segment
+            if (bar_pos <= active_segment) {
+                // This point should be lit
+                // Brighter at the leading edge, dimmer at the base
+                float edge_effect = smoothstep(active_segment - 0.1, active_segment, bar_pos);
+                
+                // Add brightness based on position along bar and distance from nose
+                float position_brightness = 0.7 * edge_effect;
+                
+                // Base brightness stronger near the nose
+                float base_brightness = 0.3 * (1.0 - bar_pos * 0.7);
+                
+                // Combined brightness with distance falloff
+                lineIntensity += (position_brightness + base_brightness) * (1.0 - distance * 0.3);
+                
+                // Add energy transfer effect - brighter for recently activated segments
+                float recent_activation = 1.0 - abs(active_segment - bar_pos - 0.05) / 0.1;
+                recent_activation = max(0.0, recent_activation);
+                
+                // Energy transfer glow
+                float transfer_glow = recent_activation * 0.4 * (1.0 - progress); // Fades as transition completes
+                lineIntensity += transfer_glow;
+            }
+        }
+    }
+    
+    // Combine the group and line effects
+    float combinedIntensity = max(groupIntensity, lineIntensity);
+    
+    // Determine color based on which effect is dominant
+    vec3 transitionColor;
+    
+    if (lineIntensity > groupIntensity) {
+        // Line is dominant - use line color (brighter)
+        transitionColor = mix(u_base_color, u_highlight_color, combinedIntensity);
+        
+        // Add slight color variation for the energy transfer
+        if (progress < 0.8) {
+            // Calculate a unique hue for each group
+            float hue_shift = float(group) / float(u_num_groups);
+            vec3 groupColor = vec3(
+                0.9 + 0.1 * sin(hue_shift * 6.28),
+                0.9 + 0.1 * sin(hue_shift * 6.28 + 2.1),
+                0.9 + 0.1 * sin(hue_shift * 6.28 + 4.2)
+            );
+            
+            // Mix in the group color during transfer
+            float transfer_amount = (1.0 - progress / 0.8) * 0.3;
+            transitionColor = mix(transitionColor, groupColor, transfer_amount);
+        }
+    } else {
+        // Group is dominant - use group color
+        // Use the actual color from groupHighlightColor instead of recalculating
+        float normalizedGroupIntensity = combinedIntensity / max(0.001, groupIntensity);
+        transitionColor = mix(u_base_color, groupHighlightColor, normalizedGroupIntensity);
+    }
+    
+    // In the last 20% of the transition, blend directly with the final nose lines pattern
+    if (progress > 0.8) {
+        float final_blend = (progress - 0.8) / 0.2;
+        transitionColor = mix(transitionColor, noseLinesColor, final_blend);
+    }
+    
+    return transitionColor;
+}
+
+// Main transition dispatcher function
+vec3 calculateTransition(vec2 uv, vec4 pos, float group_id, float progress) {
+    // Check for specific pattern transitions with custom animations
+    
+    // Transition: Roaring (3) to Group Sequence (2)
+    if (u_from_pattern == 3 && u_to_pattern == 2) {
+        return roaringToGroupSequenceTransition(uv, pos, group_id, progress);
+    }
+    // Transition: Wave (0) to Glitter (4)
+    else if (u_from_pattern == 0 && u_to_pattern == 4) {
+        return waveToGlitterTransition(uv, pos, group_id, progress);
+    }
+    // Transition: Breathing (1) to Vertical Cascade (9)
+    else if (u_from_pattern == 1 && u_to_pattern == 9) {
+        return breathingToVerticalCascadeTransition(uv, pos, group_id, progress);
+    }
+    // Transition: Symmetrical Pulse (8) to Axis Ripple (11)
+    else if (u_from_pattern == 8 && u_to_pattern == 11) {
+        return symmetricalPulseToAxisRippleTransition(uv, pos, group_id, progress);
+    }
+    // Transition: Random Bars (6) to Bar Pattern (5)
+    else if (u_from_pattern == 6 && u_to_pattern == 5) {
+        return randomBarsToBarPatternTransition(uv, pos, group_id, progress);
+    }
+    // Transition: Group Highlight (13) to Nose Lines (12)
+    else if (u_from_pattern == 13 && u_to_pattern == 12) {
+        return groupHighlightToNoseLinesTransition(uv, pos, group_id, progress);
+    }
+    
+    // Fallback: use default crossfade transition for any other combination
+    return crossfadeTransition(uv, pos, group_id, progress);
+}
+
 out vec4 fragColor;
 
 void main() {
@@ -1100,53 +2174,78 @@ void main() {
     // B (z) = integer bar ID (not normalized)
     // A (w) = position along bar (0-1)
     
-    // Sample the group information from the third input 
-    vec4 groupData = texture(sTD2DInputs[2], vUV.st);
+    // Get the bar ID from the position map
+    int bar_id = int(posData.z);
+    
+    // Sample the group information using the proper sampleGroupTexture function
+    // to properly map from the 9x9 texture
+    vec4 groupData = sampleGroupTexture(bar_id);
     // groupData contains:
     // R = BAR_ID (should match posData.z)
     // G = GROUP_NUMBER (integer group ID)
     
-    // Get group ID from the new texture
+    // Get group ID from the texture (1-based indexing)
     float group_id = groupData.g;
+    int group = int(group_id + 0.5); // Round to nearest integer
     
     // Calculate procedural animation color
     vec3 procColor;
-    if (u_pattern == 0) {
-        procColor = animateWave(vUV.st, posData, group_id);
-    } else if (u_pattern == 1) {
-        procColor = animateBreathing(vUV.st, posData, group_id);
-    } else if (u_pattern == 2) {
-        procColor = animateGroupSequence(vUV.st, posData, group_id);
-    } else if (u_pattern == 3) {
-        procColor = animateRoaring(vUV.st, posData, group_id);
-    } else if (u_pattern == 4) {
-        procColor = animateGlitter(vUV.st, posData, group_id);
-    } else if (u_pattern == 5) {
-        procColor = animateBarPattern(vUV.st, posData, group_id);
-    } else if (u_pattern == 6) {
-        procColor = animateRandomBars(vUV.st, posData, group_id);
-    } else if (u_pattern == 7) {
-        procColor = animateSingleBar(vUV.st, posData, group_id);
-    } 
-    // Add new animations (patterns 8-15)
-    else if (u_pattern == 8) {
-        procColor = animateSymmetricalPulse(vUV.st, posData, group_id);
-    } else if (u_pattern == 9) {
-        procColor = animateVerticalCascade(vUV.st, posData, group_id);
-    } else if (u_pattern == 10) {
-        procColor = animateSymmetricalChase(vUV.st, posData, group_id);
-    } else if (u_pattern == 11) {
-        procColor = animateAxisRipple(vUV.st, posData, group_id);
-    } else if (u_pattern == 12) {
-        procColor = animateNoseLines(vUV.st, posData, group_id);
-    } else if (u_pattern == 13) {
-        procColor = animateGroupHighlight(vUV.st, posData, group_id);
-    } else if (u_pattern == 14) {
-        procColor = debugGroupVisualization(vUV.st, posData, group_id);
-    } else if (u_pattern == 15) {
-        procColor = animateAnatomicalExpression(vUV.st, posData, group_id);
-    } else {
-        procColor = animateWave(vUV.st, posData, group_id);
+    
+    // NEW: Handle transitions if enabled
+    if (u_enable_transition > 0) {
+        procColor = calculateTransition(vUV.st, posData, group_id, u_transition_progress);
+    }
+    // Otherwise, use the standard pattern selection
+    else {
+        if (u_pattern == 0) {
+            procColor = animateWave(vUV.st, posData, group_id);
+        } else if (u_pattern == 1) {
+            procColor = animateBreathing(vUV.st, posData, group_id);
+        } else if (u_pattern == 2) {
+            procColor = animateGroupSequence(vUV.st, posData, group_id);
+        } else if (u_pattern == 3) {
+            procColor = animateRoaring(vUV.st, posData, group_id);
+        } else if (u_pattern == 4) {
+            procColor = animateGlitter(vUV.st, posData, group_id);
+        } else if (u_pattern == 5) {
+            procColor = animateBarPattern(vUV.st, posData, group_id);
+        } else if (u_pattern == 6) {
+            procColor = animateRandomBars(vUV.st, posData, group_id);
+        } else if (u_pattern == 7) {
+            procColor = animateSingleBar(vUV.st, posData, group_id);
+        } 
+        // Add new animations (patterns 8-15)
+        else if (u_pattern == 8) {
+            procColor = animateSymmetricalPulse(vUV.st, posData, group_id);
+        } else if (u_pattern == 9) {
+            procColor = animateVerticalCascade(vUV.st, posData, group_id);
+        } else if (u_pattern == 10) {
+            procColor = animateSymmetricalChase(vUV.st, posData, group_id);
+        } else if (u_pattern == 11) {
+            procColor = animateAxisRipple(vUV.st, posData, group_id);
+        } else if (u_pattern == 12) {
+            procColor = animateNoseLines(vUV.st, posData, group_id);
+        } else if (u_pattern == 13) {
+            procColor = animateGroupHighlight(vUV.st, posData, group_id);
+        } else if (u_pattern == 14) {
+            procColor = debugGroupVisualization(vUV.st, posData, group_id);
+        } else if (u_pattern == 15) {
+            procColor = animateAnatomicalExpression(vUV.st, posData, group_id);
+        } else {
+            procColor = animateWave(vUV.st, posData, group_id);
+        }
+    }
+    
+    // Apply independent facial feature controls - NEW!
+    
+    // Eyes override
+    if (u_eyes_override > 0 && group == EYES_GROUP) {
+        procColor = animateEyes(vUV.st, posData, group_id);
+    }
+    
+    // Teeth override
+    if (u_teeth_override > 0 && group == TEETH_GROUP) {
+        procColor = animateTeeth(vUV.st, posData, group_id);
     }
     
     // Sample texture if needed
